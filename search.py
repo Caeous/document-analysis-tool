@@ -1,7 +1,6 @@
 import os
 from typing import List, Tuple, Dict
 from io import BytesIO
-from datetime import datetime
 
 import streamlit as st
 import chromadb
