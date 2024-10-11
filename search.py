@@ -7,6 +7,8 @@ from io import BytesIO
 
 import streamlit as st
 import chromadb
+from chromadb.config import Settings
+
 from openai import OpenAI
 from dotenv import load_dotenv
 from chromadb.utils import embedding_functions
@@ -23,8 +25,14 @@ MODEL_NAME = "gpt-4o"
 load_dotenv()
 
 # Initialize ChromaDB client
-chroma_client = chromadb.EphemeralClient()
-collection = chroma_client.get_or_create_collection(name=COLLECTION_NAME)
+chroma_client = chromadb.Client(Settings(
+    chroma_db_impl="duckdb+parquet",
+    persist_directory="./chroma_db"
+))
+if COLLECTION_NAME not in chroma_client.list_collections():
+    collection = chroma_client.create_collection(name=COLLECTION_NAME)
+else:
+    collection = chroma_client.get_collection(name=COLLECTION_NAME)
 
 # Initialize the default embedding function
 default_ef = embedding_functions.DefaultEmbeddingFunction()
@@ -73,6 +81,8 @@ def add_to_collection(paragraph: Dict[str, str], pdf_name: str) -> None:
         documents=[paragraph['text']],
         ids=[f"{pdf_name}_page_{paragraph['page']}_{len(collection.get()['ids'])}"]
     )
+    chroma_client.persist()  # Add this line to persist changes
+
 
 def search_keywords(query: str, k: int = 10) -> List[Tuple[str, Dict, float]]:
     """Search for keywords in the collection."""
