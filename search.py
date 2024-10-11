@@ -11,9 +11,9 @@ from typing import List, Tuple, Dict
 from io import BytesIO
 
 import streamlit as st
-from streamlit_chromadb_connection.chromadb_connection import ChromadbConnection
 from openai import OpenAI
 from dotenv import load_dotenv
+import chromadb
 from chromadb.utils import embedding_functions
 from unstructured.partition.pdf import partition_pdf
 import matplotlib.pyplot as plt
@@ -21,34 +21,26 @@ from wordcloud import WordCloud
 import pandas as pd
 
 # Constants
-COLLECTION_NAME = "pdf_collection"
-MODEL_NAME = "gpt-4o"
+COLLECTION_NAME = "documents_collection"
+MODEL_NAME = "gpt-4"
 
 # Load environment variables
 load_dotenv()
 
-# ChromaDB connection configuration
-configuration = {
-    "client": "PersistentClient",
-    "path": "./chroma_db"
-}
+st.set_page_config(layout="wide")
 
-# Initialize ChromaDB connection
-@st.cache_resource
-def get_chroma_connection():
-    return st.connection("chromadb", type=ChromadbConnection, **configuration)
+os.makedirs("/tmp/.chroma", exist_ok=True)
 
-# Replace the existing chroma_client initialization with this:
-conn = get_chroma_connection()
-
-# Modify the collection initialization
-if COLLECTION_NAME not in conn.list_collections():
-    collection = conn.create_collection(name=COLLECTION_NAME)
-else:
-    collection = conn.get_collection(name=COLLECTION_NAME)
+client = chromadb.Client()
 
 # Initialize the default embedding function
 default_ef = embedding_functions.DefaultEmbeddingFunction()
+
+collection = client.get_or_create_collection(
+    name=COLLECTION_NAME,
+    embedding_function=default_ef,
+    metadata={"hnsw:space": "cosine"}
+)
 
 @st.cache_resource
 def get_openai_client():
@@ -87,20 +79,17 @@ def extract_paragraphs_from_pdf(pdf_file) -> List[Dict[str, str]]:
 
 def add_to_collection(paragraph: Dict[str, str], pdf_name: str) -> None:
     """Add a paragraph to the ChromaDB collection."""
-    embedding = create_embeddings(paragraph['text'])
     collection.add(
-        embeddings=[embedding],
+        embeddings=[create_embeddings(paragraph['text'])],
         metadatas=[{"page": paragraph['page'], "pdf_name": pdf_name}],
         documents=[paragraph['text']],
-        ids=[f"{pdf_name}_page_{paragraph['page']}_{len(collection.get()['ids'])}"]
+        ids=[f"{pdf_name}_page_{paragraph['page']}_{collection.count()}"]
     )
-    conn.persist()
 
 def search_keywords(query: str, k: int = 10) -> List[Tuple[str, Dict, float]]:
     """Search for keywords in the collection."""
-    query_embedding = create_embeddings(query)
     results = collection.query(
-        query_embeddings=[query_embedding],
+        query_embeddings=[create_embeddings(query)],
         n_results=k,
         include=['metadatas', 'documents', 'distances']
     )
@@ -159,8 +148,6 @@ def generate_csv(results: Dict[str, List[Tuple[str, Dict, float]]]) -> str:
     return df.to_csv(index=False)
 
 def main():
-    st.set_page_config(layout="wide")
-
     if 'processed_pdfs' not in st.session_state:
         st.session_state.processed_pdfs = set()
         st.session_state.pdf_uploaded = False
@@ -234,7 +221,11 @@ def main():
                     st.warning("Please enter keywords to search.")
 
         st.subheader("Collection Data")
-        documents_collection_df = conn.get_collection_data(COLLECTION_NAME)
+        documents_collection_df = pd.DataFrame({
+            'ids': collection.get()['ids'],
+            'documents': collection.get()['documents'],
+            'metadatas': collection.get()['metadatas']
+        })
         st.dataframe(documents_collection_df)
 
     with col2:
