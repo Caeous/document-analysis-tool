@@ -31,7 +31,7 @@ st.set_page_config(layout="wide")
 
 os.makedirs("/tmp/.chroma", exist_ok=True)
 
-client = chromadb.Client()
+client = chromadb.EphemeralClient()
 
 # Initialize the default embedding function
 default_ef = embedding_functions.DefaultEmbeddingFunction()
@@ -219,14 +219,6 @@ def main():
                     st.write("---")
                 else:
                     st.warning("Please enter keywords to search.")
-
-        st.subheader("Collection Data")
-        documents_collection_df = pd.DataFrame({
-            'ids': collection.get()['ids'],
-            'documents': collection.get()['documents'],
-            'metadatas': collection.get()['metadatas']
-        })
-        st.dataframe(documents_collection_df)
 
     with col2:
         col2_1, col2_2 = st.columns([4, 1])
